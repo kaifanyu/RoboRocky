@@ -1,0 +1,141 @@
+<?xml version="1.0"?>
+<robot name="rocky">
+
+  <link name="wall">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <!-- Big mass so it's clearly "fixed-ish"; exact numbers don't matter if welded -->
+      <mass value="100.0"/>
+      <inertia ixx="1" iyy="1" izz="1" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.05 1.00 3.00"/></geometry>
+      <material name="wallGray"><color rgba="0.7 0.7 0.7 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.05 1.00 3.00"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="wall_to_world" type="fixed">
+    <parent link="world"/>
+    <child  link="wall"/>
+    <!-- Place the wall in world; tweak if you want -->
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Upper Arm 
+  Length: 0.5m along +x -->
+  <link name="link1">
+    <inertial>  
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.6"/>
+      <inertia ixx="0.0020" iyy="0.0060" izz="0.0060" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+
+    <visual>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.50 0.04 0.04"/></geometry>
+      <material name="orange"><color rgba="0.9 0.4 0.2 1"/></material>
+    </visual>
+
+    <collision>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.50 0.04 0.04"/></geometry>
+    </collision>
+  </link>
+
+  <!-- SHOULDER joint: wall -> link1, mounted at height Z0 -->
+  <joint name="shoulder" type="revolute">
+    <parent link="wall"/>
+    <child  link="link1"/>
+    <!-- ***** Set your mounting height here ***** -->
+    <origin xyz="0 0 1" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14" upper="3.14" effort="40" velocity="8.0"/>
+    <dynamics damping="0.5"/>
+  </joint>
+
+  <!-- Shoulder visual marker (at the shoulder joint pose on the wall) -->
+  <link name="shoulder_marker">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><sphere radius="0.04"/></geometry>
+      <material name="jointGray"><color rgba="0.6 0.6 0.6 1"/></material>
+    </visual>
+  </link>
+  <joint name="shoulder_marker_weld" type="fixed">
+    <parent link="wall"/>
+    <child  link="shoulder_marker"/>
+    <origin xyz="0 0 1" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Forearm -->
+  <link name="link2">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.0020" iyy="0.0060" izz="0.0060" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.50 0.04 0.04"/></geometry>
+      <material name="blue"><color rgba="0.2 0.6 0.9 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.50 0.04 0.04"/></geometry>
+    </collision>
+  </link>
+  
+
+  <!-- Elbow Joint-->
+  <joint name="elbow" type="revolute">
+    <parent link="link1"/>
+    <child  link="link2"/>
+
+    <origin xyz="0.50 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+
+    <limit lower="-3.14" upper="3.14" effort="30" velocity="8.0"/>
+    <dynamics damping="0.3"/>
+  </joint>
+
+  <!-- Elbow Visual Marker -->
+  <link name="elbow_marker">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><sphere radius="0.04"/></geometry>
+      <material name="jointGray"><color rgba="0.6 0.6 0.6 1"/></material>
+    </visual>
+  </link>
+  <joint name="elbow_marker_weld" type="fixed">
+    <parent link="link1"/>
+    <child  link="elbow_marker"/>
+    <!-- Same pose as the elbow joint -->
+    <origin xyz="0.50 0 0" rpy="0 0 0"/>
+  </joint>
+
+
+
+  <!-- End Effector Glove Joint -->
+  <joint name="glove_fixed" type="fixed">
+    <parent link="link2"/>
+    <child  link="glove"/>
+    <origin xyz="0.5 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- End Effector Glove visualize-->
+  <link name="glove">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><sphere radius="0.05"/></geometry>
+      <material name="red"><color rgba="1 0 0 1"/></material>
+    </visual>
+  </link>
+
+
+
+</robot>
