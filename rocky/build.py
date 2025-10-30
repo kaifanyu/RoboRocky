@@ -1,6 +1,10 @@
 # rocky/build.py
 from dataclasses import dataclass
-from pydrake.all import DiagramBuilder, AddMultibodyPlantSceneGraph, Parser, AddDefaultVisualization, Simulator
+import numpy as np
+from pydrake.all import (
+    DiagramBuilder, AddMultibodyPlantSceneGraph, Parser,
+    RigidTransform, RotationMatrix, AddDefaultVisualization, Simulator
+)
 
 @dataclass
 class SimBundle:
@@ -8,26 +12,62 @@ class SimBundle:
     plant: any
     scene_graph: any
     diagram: any
-    context: any           # root diagram context
-    plant_context: any     # <-- add this
+    context: any
+    plant_context: any
     simulator: Simulator
+    ally: int | None = None
+    enemy: int | None = None
 
-def build_robot_diagram(urdf_path, time_step=1e-3, gravity_vec=(0.,0.,0.), meshcat=None) -> SimBundle:
-    builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=time_step)
-    Parser(plant).AddModels(urdf_path)
-    plant.mutable_gravity_field().set_gravity_vector(gravity_vec)
+
+def _finalize(builder, plant, gravity_vec, meshcat):
+    plant.mutable_gravity_field().set_gravity_vector(gravity_vec)   #set a gravity vector
     plant.Finalize()
-
     if meshcat is not None:
-        AddDefaultVisualization(builder, meshcat=meshcat)
-
+        AddDefaultVisualization(builder, meshcat=meshcat)   # visualize with meshcat
     diagram = builder.Build()
     context = diagram.CreateDefaultContext()
-    plant_context = plant.GetMyContextFromRoot(context)   # <-- key line
-
+    plant_context = plant.GetMyContextFromRoot(context)
     sim = Simulator(diagram, context)
     sim.set_publish_every_time_step(True)
-    sim.Initialize()
+    # sim.Initialize()
+    return diagram, context, plant_context, sim
 
-    return SimBundle(builder, plant, scene_graph, diagram, context, plant_context, sim)
+def build_robot_diagram_one(urdf_path, time_step=1e-3, gravity_vec=(0.,0.,0.), meshcat=None) -> SimBundle:
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=time_step)
+    parser = Parser(plant)
+
+    # Load one model (URDF should NOT weld to world; no wall_to_world joint)
+    ally = parser.AddModels(urdf_path)[0]
+
+    # Place/weld the single instance
+    W = plant.world_frame()
+    A_wall = plant.GetFrameByName("wall", model_instance=ally)
+    plant.WeldFrames(W, A_wall, RigidTransform([0., 0., 0.]))
+
+    diagram, context, plant_context, sim = _finalize(builder, plant, gravity_vec, meshcat)
+    return SimBundle(builder, plant, scene_graph, diagram, context, plant_context, sim, ally=ally)
+
+def build_robot_diagram_two(urdf_path, time_step=1e-3, gravity_vec=(0.,0.,0.), meshcat=None) -> SimBundle:
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=time_step)
+    parser = Parser(plant)
+
+    # Two copies of the same model
+    parser.SetAutoRenaming(True)          # will create rocky(1), rocky(2), etc.
+    ally  = parser.AddModels(urdf_path)[0]
+    enemy = parser.AddModels(urdf_path)[0]
+
+    # Place them (enemy rotated 180° about z and shifted to +y)
+    W = plant.world_frame()
+    A_wall = plant.GetFrameByName("wall", model_instance=ally)
+    E_wall = plant.GetFrameByName("wall", model_instance=enemy)
+
+    X_WA = RigidTransform([0.0, 0.0, 0.0])
+    X_WE = RigidTransform(RotationMatrix.MakeZRotation(np.pi), [1.5, 0.0, -0.5])
+
+    plant.WeldFrames(W, A_wall, X_WA)
+    plant.WeldFrames(W, E_wall, X_WE)
+
+    diagram, context, plant_context, sim = _finalize(builder, plant, gravity_vec, meshcat)
+    return SimBundle(builder, plant, scene_graph, diagram, context, plant_context, sim, ally=ally, enemy=enemy)

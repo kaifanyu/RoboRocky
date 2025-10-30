@@ -19,13 +19,6 @@
     </collision>
   </link>
 
-  <joint name="wall_to_world" type="fixed">
-    <parent link="world"/>
-    <child  link="wall"/>
-    <!-- Place the wall in world; tweak if you want -->
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
-
   <!-- Upper Arm 
   Length: 0.5m along +x -->
   <link name="link1">
@@ -53,9 +46,9 @@
     <child  link="link1"/>
     <!-- ***** Set your mounting height here ***** -->
     <origin xyz="0 0 1" rpy="0 0 0"/>
-    <axis xyz="0 0 1"/>
+    <axis xyz="0 1 0"/>
     <limit lower="-3.14" upper="3.14" effort="40" velocity="8.0"/>
-    <dynamics damping="0.5"/>
+    <dynamics damping="0.1"/>
   </joint>
 
   <!-- Shoulder visual marker (at the shoulder joint pose on the wall) -->
@@ -75,7 +68,7 @@
   <!-- Forearm -->
   <link name="link2">
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
       <mass value="0.5"/>
       <inertia ixx="0.0020" iyy="0.0060" izz="0.0060" ixy="0" ixz="0" iyz="0"/>
     </inertial>
@@ -97,10 +90,10 @@
     <child  link="link2"/>
 
     <origin xyz="0.50 0 0" rpy="0 0 0"/>
-    <axis xyz="0 0 1"/>
+    <axis xyz="0 1 0"/>
 
     <limit lower="-3.14" upper="3.14" effort="30" velocity="8.0"/>
-    <dynamics damping="0.3"/>
+    <dynamics damping="0.1"/>
   </joint>
 
   <!-- Elbow Visual Marker -->
@@ -134,6 +127,17 @@
       <geometry><sphere radius="0.05"/></geometry>
       <material name="red"><color rgba="1 0 0 1"/></material>
     </visual>
+      <collision>
+      <drake:proximity_properties>
+      <drake:hunt_crossley_dissipation value="0.5"/>   <!-- lower = bouncier -->
+      <drake:mu_static  value="0.7"/>
+      <drake:mu_dynamic value="0.5"/>
+    </drake:proximity_properties>
+
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><sphere radius="0.05"/></geometry>
+      </collision>
+
   </link>
 
 
