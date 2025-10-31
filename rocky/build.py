@@ -21,7 +21,7 @@ class SimBundle:
     ally: int | None = None
     enemy: int | None = None
 
-
+# Helper function
 def _finalize(builder, plant, gravity_vec, meshcat):
     plant.mutable_gravity_field().set_gravity_vector(gravity_vec)   #set a gravity vector
     plant.Finalize()
@@ -32,7 +32,6 @@ def _finalize(builder, plant, gravity_vec, meshcat):
     plant_context = plant.GetMyContextFromRoot(context)
     sim = Simulator(diagram, context)
     sim.set_publish_every_time_step(True)
-    # sim.Initialize()
     return diagram, context, plant_context, sim
 
 def build_robot_diagram_one(urdf_path, time_step=1e-3, gravity_vec=(0.,0.,0.), meshcat=None) -> SimBundle:
@@ -63,7 +62,7 @@ def build_robot_diagram_two(
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=time_step)
     parser = Parser(plant)
-    
+
     # Two copies of the same model
     parser.SetAutoRenaming(True)          # will create rocky(1), rocky(2), etc.
     ally  = parser.AddModels(urdf_path)[0]
