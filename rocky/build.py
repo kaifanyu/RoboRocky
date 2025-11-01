@@ -11,14 +11,14 @@ from pydrake.geometry import Sphere
 
 @dataclass
 class SimBundle:
-    builder: DiagramBuilder
-    plant: any
-    scene_graph: any
-    diagram: any
-    context: any
-    plant_context: any
+    builder: DiagramBuilder     # used to build
+    plant: any                  # the physical system, holdes joints, frames
+    scene_graph: any            
+    diagram: any                # full system gram, contains plant, controller
+    context: any                # stores times, state, params
+    plant_context: any          #+
     simulator: Simulator
-    ally: int | None = None
+    ally: int | None = None     # model indicies
     enemy: int | None = None
 
 # Helper function
@@ -98,7 +98,6 @@ def build_robot_diagram_two(
         np.array(enemy_target_rgba, dtype=float)  # Drake wants a numpy RGBA
     )
 
-
     X_WA = RigidTransform([0.0, 0.0, 0.0])
     X_WE = RigidTransform(RotationMatrix.MakeZRotation(np.pi), [1.5, 0.0, -0.5])
 
@@ -108,6 +107,3 @@ def build_robot_diagram_two(
     diagram, context, plant_context, sim = _finalize(builder, plant, gravity_vec, meshcat)
     return SimBundle(builder, plant, scene_graph, diagram, context, plant_context, sim,
                      ally=ally, enemy=enemy)
-
-    # diagram, context, plant_context, sim = _finalize(builder, plant, gravity_vec, meshcat)
-    # return SimBundle(builder, plant, scene_graph, diagram, context, plant_context, sim, ally=ally, enemy=enemy)
