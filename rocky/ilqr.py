@@ -22,34 +22,42 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Tuple
 import numpy as np
+from dataclasses import dataclass, field
 
 
+@dataclass
 class ArmParams:
-    # Geometry and inertias pulled from rocky.urdf
+    # Geometry and inertias
     l1: float = 0.50
     l2: float = 0.50
     m1: float = 0.60
     m2: float = 0.50
     I1: float = 0.0020
     I2: float = 0.0020
-    damping: np.ndarray = np.array([0.1, 0.1], dtype=float)
-    gravity: float = 9.81
-    torque_limit: np.ndarray = np.array([40.0, 30.0], dtype=float)
 
-    # Meant to clip torque limits
+    damping: np.ndarray = field(default_factory=lambda: np.array([0.1, 0.1], dtype=float))
+    gravity: float = 9.81
+
+    torque_limit: np.ndarray = field(default_factory=lambda: np.array([40.0, 30.0], dtype=float))
+
+    # Clip torque limits
     def clip_u(self, u: np.ndarray) -> np.ndarray:
         return np.clip(u, -self.torque_limit, self.torque_limit)
 
 
+@dataclass
 class CostParams:
-    Q: np.ndarray = np.diag([5.0, 5.0, 0.1, 0.1])
-    R: np.ndarray = 0.01 * np.eye(2)
-    Qf: np.ndarray = np.diag([40.0, 40.0, 1.0, 1.0])
+    Q: np.ndarray = field(default_factory=lambda: np.diag([5.0, 5.0, 0.1, 0.1]))
+    R: np.ndarray = field(default_factory=lambda: 0.01 * np.eye(2))
+    Qf: np.ndarray = field(default_factory=lambda: np.diag([40.0, 40.0, 1.0, 1.0]))
+
+    wall_position: float = 0
+
     target_weight: float = 200.0
     avoid_weight: float = 150.0
     avoid_sigma: float = 0.10  # meters
-    x_goal: np.ndarray = np.zeros(4)
 
+    x_goal: np.ndarray = field(default_factory=lambda: np.zeros(4))
 
 @dataclass
 class ILQRResult:
@@ -199,6 +207,32 @@ def _avoidance_terms(
     hess_q = J.T @ hess_p @ J
     return scale, grad_q, hess_q
 
+def _avoidance_walls(
+    q: np.ndarray,
+    wall_pos: float,
+    params: ArmParams,
+    weight: float,
+    sigma: float,
+) -> Tuple[float, np.ndarray, np.ndarray]:
+    p = forward_kinematics(q, params)
+    J = jacobian(q, params)
+    rel = p - [wall_pos, p[1]]
+    print('Position of EE', p)
+    print('Displacement Relative to Wall', rel)
+    r2 = float(rel.T @ rel)
+    print('r2', r2)
+    if r2 < 1e-10 or sigma <= 0.0 or weight <= 0.0:
+        return 0.0, np.zeros(2), np.zeros((2, 2))
+    scale = weight * np.exp(-0.5 * r2 / (sigma**2))
+    grad_p = -(scale / (sigma**2)) * rel
+    # Gauss-barrier Hessian approximation in task space
+    hess_p = scale * (
+        (np.outer(rel, rel) / (sigma**4)) - (np.eye(2) / (sigma**2))
+    )
+    grad_q = J.T @ grad_p
+    hess_q = J.T @ hess_p @ J
+    return scale, grad_q, hess_q
+
 
 def running_cost(
     x: np.ndarray,
@@ -243,6 +277,17 @@ def running_cost(
     l += c_avoid
     l_x[:2] += g_q
     l_xx[:2, :2] += H_q
+    
+    print("Obstacle Avoidance:", c_avoid)
+
+    c_avoid, g_q, H_q = _avoidance_walls(
+        x[:2], 0, params, cost.avoid_weight, cost.avoid_sigma
+    )
+    l += c_avoid
+    l_x[:2] += g_q
+    l_xx[:2, :2] += H_q
+
+    print("Wall Avoidance:", c_avoid)
 
     return l, l_x, l_u, l_xx, l_uu, l_ux
 
@@ -285,6 +330,7 @@ class ILQRController:
         max_iter: int = 100,
         tol: float = 1e-3,
         reg: float = 1e-6,
+        verbose: bool = False,
     ):
         self.N = horizon
         self.dt = dt
@@ -294,6 +340,21 @@ class ILQRController:
         self.tol = tol
         self.reg = reg
         self.alpha_list = [1.0, 0.5, 0.25, 0.1, 0.05]
+        self.verbose = verbose
+
+    def __repr__(self) -> str:
+        """Printable summary of controller configuration."""
+        p, c = self.params, self.cost
+        arr = lambda a: np.array2string(np.asarray(a), precision=3, floatmode="fixed")
+        lines = [
+            "ILQRController(",
+            f"  horizon={self.N}, dt={self.dt}, max_iter={self.max_iter}, tol={self.tol}, reg={self.reg}, verbose={self.verbose}",
+            f"  params: l1={p.l1}, l2={p.l2}, m1={p.m1}, m2={p.m2}, I1={p.I1}, I2={p.I2}, damping={arr(p.damping)}, gravity={p.gravity}, torque_limit={arr(p.torque_limit)}",
+            f"  cost: Q={arr(c.Q)}, R={arr(c.R)}, Qf={arr(c.Qf)}, target_w={c.target_weight}, avoid_w={c.avoid_weight}, avoid_sigma={c.avoid_sigma}, x_goal={arr(c.x_goal)}",
+            f"  alphas={self.alpha_list}",
+            ")",
+        ]
+        return "\n".join(lines)
 
     # Main iLQR solve -----------------------------------------------------
     def solve(
@@ -330,6 +391,8 @@ class ILQRController:
             return x_trj, total_cost
 
         X, J = rollout(U)
+        if self.verbose:
+            print(f"[iLQR] init cost {J:.4f}")
 
         for it in range(self.max_iter):
             # Backward pass
@@ -370,10 +433,13 @@ class ILQRController:
                 V_xx = Q_xx + K_fb.T @ Q_uu @ K_fb + K_fb.T @ Q_ux + Q_ux.T @ K_fb
 
             if diverged:
+                if self.verbose:
+                    print(f"[iLQR] backward diverged at iter {it}")
                 break
 
             # Forward line search
             improved = False
+            cost_new = J
             for alpha in self.alpha_list:
                 U_new = np.zeros_like(U)
                 X_new = np.zeros_like(X)
@@ -401,10 +467,19 @@ class ILQRController:
                     X = X_new
                     J = cost_new
                     improved = True
+                    if self.verbose:
+                        print(f"[iLQR] iter {it} alpha {alpha:.2f} -> cost {J:.4f}")
                     break
 
-            if not improved or abs(J - cost_new) < self.tol:
+            if not improved:
+                if self.verbose:
+                    print(f"[iLQR] iter {it} no improvement (cost {cost_new:.4f})")
                 return ILQRResult(X, U, J, it + 1, improved)
+
+            if abs(J - cost_new) < self.tol:
+                if self.verbose:
+                    print(f"[iLQR] converged at iter {it} cost {J:.4f}")
+                return ILQRResult(X, U, J, it + 1, True)
 
         return ILQRResult(X, U, J, self.max_iter, False)
 
@@ -421,6 +496,8 @@ class ILQRController:
         result = self.solve(x_current, target_pos, enemy_pos, u_init=u_init)
         u0 = result.u_trj[0]
         x_next = discrete_dynamics(x_current, u0, self.dt, self.params)
+        if self.verbose:
+            print(f"[MPC] x={x_current} target={target_pos} u0={u0} cost={result.cost:.4f}")
         return x_next, result
 
     @staticmethod
