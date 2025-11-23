@@ -27,6 +27,7 @@ class CostParams:
 
     # Task-space weights
     target_weight: float = 200.0  # move EE to target
+    r_min: float = 0.80 # 
     avoid_weight: float = 150.0   # avoid enemy EE
     avoid_sigma: float = 0.10     # “radius” of avoidance (m)
 
@@ -68,6 +69,7 @@ def _avoidance_terms(
     q: np.ndarray,
     enemy_pos: np.ndarray,
     params: ArmParams,
+    r_min: float,
     weight: float,
     sigma: float,
 ) -> Tuple[float, np.ndarray, np.ndarray]:
@@ -144,7 +146,7 @@ def running_cost(
 
     # 3) Enemy avoidance in task space
     c_avoid, g_q, H_q = _avoidance_terms(
-        x[:2], enemy_pos, params, cost.avoid_weight, cost.avoid_sigma
+        x[:2], enemy_pos, params, cost.r_min, cost.avoid_weight, cost.avoid_sigma
     )
     l += c_avoid
     l_x[:2] += g_q
@@ -178,7 +180,7 @@ def terminal_cost(
     l_xx[:2, :2] += H_q
 
     c_avoid, g_q, H_q = _avoidance_terms(
-        x[:2], enemy_pos, params, cost.avoid_weight, cost.avoid_sigma
+        x[:2], enemy_pos, params, cost.r_min, cost.avoid_weight, cost.avoid_sigma
     )
     l += c_avoid
     l_x[:2] += g_q
