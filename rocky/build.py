@@ -3,107 +3,99 @@ from dataclasses import dataclass
 import numpy as np
 from pydrake.all import (
     DiagramBuilder, AddMultibodyPlantSceneGraph, Parser,
-    RigidTransform, RotationMatrix, AddDefaultVisualization, Simulator
+    RigidTransform, RotationMatrix, AddDefaultVisualization, Simulator,
+    Rgba, Sphere
 )
-from pydrake.multibody.tree import FixedOffsetFrame
-from pydrake.geometry import Sphere
-
+from pydrake.multibody.tree import FixedOffsetFrame, RevoluteJoint
 
 @dataclass
 class SimBundle:
-    builder: DiagramBuilder     # used to build
-    plant: any                  # the physical system, holdes joints, frames
-    scene_graph: any            
-    diagram: any                # full system gram, contains plant, controller
-    context: any                # stores times, state, params
-    plant_context: any          #+
+    builder: DiagramBuilder
+    plant: any
+    scene_graph: any
+    diagram: any
+    context: any
+    plant_context: any
     simulator: Simulator
-    ally: int | None = None     # model indicies
+    ally: int | None = None
     enemy: int | None = None
 
-# Helper function
+
+# finalizes plant, builds diagram, creates context and simulator
 def _finalize(builder, plant, gravity_vec, meshcat):
-    plant.mutable_gravity_field().set_gravity_vector(gravity_vec)   #set a gravity vector
-    plant.Finalize()
+    plant.mutable_gravity_field().set_gravity_vector(gravity_vec)       # set gravity vector
+    plant.Finalize()                                                    # finalizes plant
     if meshcat is not None:
-        AddDefaultVisualization(builder, meshcat=meshcat)   # visualize with meshcat
-    diagram = builder.Build()
-    context = diagram.CreateDefaultContext()
-    plant_context = plant.GetMyContextFromRoot(context)
-    sim = Simulator(diagram, context)
+        AddDefaultVisualization(builder, meshcat=meshcat)               # add visualization
+    diagram = builder.Build()                                           # build diagram
+    context = diagram.CreateDefaultContext()                            # build context
+    plant_context = plant.GetMyContextFromRoot(context)                 # extract plant_context from context
+    sim = Simulator(diagram, context)                                   # wraps in simulator, enables publishing every time stamp
     sim.set_publish_every_time_step(True)
     return diagram, context, plant_context, sim
 
-def build_robot_diagram_one(urdf_path, time_step=1e-3, gravity_vec=(0.,0.,0.), meshcat=None) -> SimBundle:
-    builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=time_step)
-    parser = Parser(plant)
 
-    # Load one model (URDF should NOT weld to world; no wall_to_world joint)
-    ally = parser.AddModels(urdf_path)[0]
-
-    # Place/weld the single instance
-    W = plant.world_frame()
-    A_wall = plant.GetFrameByName("wall", model_instance=ally)
-    plant.WeldFrames(W, A_wall, RigidTransform([0., 0., 0.]))
-
-    diagram, context, plant_context, sim = _finalize(builder, plant, gravity_vec, meshcat)
-    return SimBundle(builder, plant, scene_graph, diagram, context, plant_context, sim, ally=ally)
-
-# def build_robot_diagram_two(urdf_path, time_step=1e-3, gravity_vec=(0.,0.,0.), meshcat=None,) -> SimBundle:
 def build_robot_diagram_two(
-    urdf_path, time_step=1e-3, gravity_vec=(0.,0.,0.), meshcat=None,
-    enemy_target_xyz=(0.07, 0.0, 1.0),   # 7 cm off the wall, z = 1.0 m
-    enemy_target_rpy=(0.0, 0.0, 0.0),    # roll, pitch, yaw in radians
-    enemy_target_radius=0.03,            # 3 cm sphere marker
-    enemy_target_rgba=(0.95, 0.2, 0.2, 1.0),  # visible color
-    ) -> SimBundle:
+    urdf_path: str,
+    time_step: float = 1e-3,
+    gravity_vec=(0., 0., 0.),
+    meshcat=None,
+):
+    builder = DiagramBuilder()      # create a builder, holds plant and scene
 
-    builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=time_step)
-    parser = Parser(plant)
+    # adds a plant: core object that represents my robot in the world with physics engine
+    # builds it with timestep, scene_graph is for visualization
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=time_step)  
+    parser = Parser(plant)      # loads URDF into plant
 
-    # Two copies of the same model
-    parser.SetAutoRenaming(True)          # will create rocky(1), rocky(2), etc.
+
+    # creates rocky(1), rocky(2)
+    parser.SetAutoRenaming(True)
     ally  = parser.AddModels(urdf_path)[0]
     enemy = parser.AddModels(urdf_path)[0]
 
-    # Place them (enemy rotated 180° about z and shifted to +y)
-    W = plant.world_frame()
-    A_wall = plant.GetFrameByName("wall", model_instance=ally)
-    E_wall = plant.GetFrameByName("wall", model_instance=enemy)
+    W = plant.world_frame() # W is the global world frame
+    A_wall = plant.GetFrameByName("wall", model_instance=ally)      # frame named wall that belongs to ally
+    E_wall = plant.GetFrameByName("wall", model_instance=enemy)     # frame named wall for enemy
 
-    # Build rotation from rpy (X*Y*Z order is fine here)
-    Rx = RotationMatrix.MakeXRotation(enemy_target_rpy[0])
-    Ry = RotationMatrix.MakeYRotation(enemy_target_rpy[1])
-    Rz = RotationMatrix.MakeZRotation(enemy_target_rpy[2])
-    R_target = Rz @ Ry @ Rx
-    X_wall_target = RigidTransform(R_target, np.array(enemy_target_xyz, dtype=float))
-
-    # 1) A named frame the controller can query
-    enemy_target = FixedOffsetFrame(
-        name="enemy_target",
-        P=E_wall,
-        X_PF=X_wall_target
-    )
-    plant.AddFrame(enemy_target)
-
-    # 2) A tiny visual marker so you can see it in Meshcat
-    enemy_wall_body = plant.GetBodyByName("wall", enemy)
-    plant.RegisterVisualGeometry(
-        enemy_wall_body,
-        X_wall_target,
-        Sphere(enemy_target_radius),
-        "enemy_target_vis",
-        np.array(enemy_target_rgba, dtype=float)  # Drake wants a numpy RGBA
-    )
-
-    X_WA = RigidTransform([0.0, 0.0, 0.0])
-    X_WE = RigidTransform(RotationMatrix.MakeZRotation(np.pi), [1.5, 0.0, -0.5])
+    # Translate and rotate ally and enemy
+    X_WA = RigidTransform([0.0, 0.0, 0.0])      # place first at 0 0 0 
+    X_WE = RigidTransform(RotationMatrix.MakeZRotation(np.pi), [1.5, 0.0, 0.0]) # rotate by pi and +2x
 
     plant.WeldFrames(W, A_wall, X_WA)
     plant.WeldFrames(W, E_wall, X_WE)
 
+
+    # for each model, add the joint
+    for model in [ally, enemy]:
+        for j_index in plant.GetJointIndices(model):
+            joint = plant.get_joint(j_index)
+            if isinstance(joint, RevoluteJoint):
+                # Name doesn't matter much, just must be unique
+                plant.AddJointActuator(f"{joint.name()}_act", joint)
+
+
+
+    # add target frame
+    target_pos_W = np.array([0.8, 0.0, 0.6])  # (x,y,z) in world
+    X_WT = RigidTransform(target_pos_W)
+
+    # fix it to frame "enemy_target"
+    plant.AddFrame(FixedOffsetFrame("enemy_target", W, X_WT))
+
+    # visual sphere 
+    radius = 0.05
+    diffuse = np.array([1.0, 0.0, 0.0, 1.0])  # RGBA as numpy array
+
+    plant.RegisterVisualGeometry(
+        plant.world_body(),   # anchored to world body
+        X_WT,
+        Sphere(radius),
+        "enemy_target_visual",
+        diffuse
+    )
+
     diagram, context, plant_context, sim = _finalize(builder, plant, gravity_vec, meshcat)
+    
     return SimBundle(builder, plant, scene_graph, diagram, context, plant_context, sim,
                      ally=ally, enemy=enemy)
