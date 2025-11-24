@@ -4,9 +4,10 @@ import numpy as np
 from pydrake.all import (
     DiagramBuilder, AddMultibodyPlantSceneGraph, Parser,
     RigidTransform, RotationMatrix, AddDefaultVisualization, Simulator,
-    Rgba, Sphere
+    Rgba, Sphere, CoulombFriction
 )
 from pydrake.multibody.tree import FixedOffsetFrame, RevoluteJoint
+from pydrake.geometry import ProximityProperties, AddContactMaterial
 
 @dataclass
 class SimBundle:
@@ -94,7 +95,22 @@ def build_robot_diagram_two(
         "enemy_target_visual",
         diffuse
     )
+    # register friction to target to get collision
+    friction = CoulombFriction(static_friction=0.8, dynamic_friction=0.5)
+    props = ProximityProperties()
+    # Example numbers; tune these:
+    elastic_modulus = 5e7      # larger -> stiffer, more bounce
+    dissipation = 0.1          # smaller -> less energy loss, more bounce
+    AddContactMaterial(dissipation, elastic_modulus, friction, props)
 
+    plant.RegisterCollisionGeometry(
+        plant.world_body(),
+        X_WT,
+        Sphere(radius),
+        "enemy_target_collision",
+        props,
+    )
+    
     diagram, context, plant_context, sim = _finalize(builder, plant, gravity_vec, meshcat)
     
     return SimBundle(builder, plant, scene_graph, diagram, context, plant_context, sim,

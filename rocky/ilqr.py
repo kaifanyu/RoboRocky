@@ -94,7 +94,8 @@ def _avoidance_terms(
     hess_p = scale * (
         (np.outer(rel, rel) / (sigma**4)) - (np.eye(2) / (sigma**2))
     )
-    
+
+    # r = 0.8
     # Extra hard penalty inside radius r_min
     if r < r_min:
         # barrier_strength can be another hyperparameter
