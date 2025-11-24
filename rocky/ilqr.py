@@ -27,9 +27,9 @@ class CostParams:
 
     # Task-space weights
     target_weight: float = 200.0  # move EE to target
-    r_min: float = 0.80 # 
-    avoid_weight: float = 150.0   # avoid enemy EE
-    avoid_sigma: float = 0.10     # “radius” of avoidance (m)
+    r_min: float = 0.00 # 
+    avoid_weight: float = 250.0   # avoid enemy EE
+    avoid_sigma: float = 0.00     # “radius” of avoidance (m)
 
     # Optional state goal if you want posture regularization
     x_goal: np.ndarray = field(default_factory=lambda: np.zeros(4))
@@ -94,8 +94,8 @@ def _avoidance_terms(
     hess_p = scale * (
         (np.outer(rel, rel) / (sigma**4)) - (np.eye(2) / (sigma**2))
     )
+    
     # Extra hard penalty inside radius r_min
-    r_min = 0.80
     if r < r_min:
         # barrier_strength can be another hyperparameter
         barrier_strength = 500.0
@@ -104,6 +104,7 @@ def _avoidance_terms(
         grad_p += barrier_strength * dr * (-rel / r)
         # You can approximate the Hessian or just add a diagonal term
         hess_p += barrier_strength * np.eye(2)
+
     grad_q = J.T @ grad_p
     hess_q = J.T @ hess_p @ J
     return scale, grad_q, hess_q
@@ -172,16 +173,12 @@ def terminal_cost(
     l_x = cost.Qf @ (x - cost.x_goal)
     l_xx = cost.Qf.copy()
 
-    c_target, g_q, H_q = _target_cost_terms(
-        x[:2], target_pos, params, cost.target_weight
-    )
+    c_target, g_q, H_q = _target_cost_terms(x[:2], target_pos, params, cost.target_weight)
     l += c_target
     l_x[:2] += g_q
     l_xx[:2, :2] += H_q
 
-    c_avoid, g_q, H_q = _avoidance_terms(
-        x[:2], enemy_pos, params, cost.r_min, cost.avoid_weight, cost.avoid_sigma
-    )
+    c_avoid, g_q, H_q = _avoidance_terms(x[:2], enemy_pos, params, cost.r_min, cost.avoid_weight, cost.avoid_sigma)
     l += c_avoid
     l_x[:2] += g_q
     l_xx[:2, :2] += H_q
@@ -243,80 +240,106 @@ class ILQRController:
         X = np.zeros((self.N + 1, nx))
         X[0] = x0
 
-        # Forward rollout helper
+
+
+        # Simulate the system forward in time using a candidate control sequence.
+        # dt = 0.02 * N = 50 = 1 second prediction window
+        # generates nominal trajectory x_trj, computes and sums all cost J
         def rollout(U_try: np.ndarray) -> Tuple[np.ndarray, float]:
-            x_trj = np.zeros_like(X)
-            x_trj[0] = x0
+            x_trj = np.zeros_like(X)    # sequence of 
+            x_trj[0] = x0   # start from current state x[0]
             total_cost = 0.0
             for k in range(self.N):
-                u_k = self.params.clip_u(U_try[k])
-                l, _, _, _, _, _ = running_cost(
-                    x_trj[k], u_k, self.cost, self.params, target_pos, enemy_pos
-                )
-                total_cost += l
-                x_trj[k + 1] = discrete_dynamics(
-                    x_trj[k], u_k, self.dt, self.params
-                )
-            lf, _, _ = terminal_cost(
-                x_trj[-1], self.cost, self.params, target_pos, enemy_pos
-            )
-            total_cost += lf
-            return x_trj, total_cost
+                u_k = self.params.clip_u(U_try[k])  # ensure u is within joint limit
 
+                # running cost at each time step
+                l, _, _, _, _, _ = running_cost(x_trj[k], u_k, self.cost, self.params, target_pos, enemy_pos)
+                total_cost += l # add total cost
+
+                # next sequence = state x after current x and u inputs
+                x_trj[k + 1] = discrete_dynamics(x_trj[k], u_k, self.dt, self.params)
+
+            lf, _, _ = terminal_cost(x_trj[-1], self.cost, self.params, target_pos, enemy_pos)
+            total_cost += lf
+    
+            # return state trajectory [x0...xN], total cost for taking this sequence of actions in time
+            return x_trj, total_cost        
+
+        # 1) Run rollout to get state trajectory X, total cost J
         X, J = rollout(U)
+
+
         if self.verbose:
             print(f"[iLQR] init cost {J:.4f}")
 
+
+
+        # Optimize control sequence U so it reduces total cost J(U), min_u J(U)
+        # Backward pass for max_iterations
         for it in range(self.max_iter):
-            # --- Backward pass ---
-            V_x, V_xx = terminal_cost(
-                X[-1], self.cost, self.params, target_pos, enemy_pos
-            )[1:]
-            k_seq = np.zeros_like(U)         # feedforward
-            K_seq = np.zeros((self.N, 2, 4)) # feedback
+        
+            # Value function: optimal cost-to-go from time k to horizon if state at time k is x
+            # V_x: gradient of cost-to-go wrt state (1, 4):
+                # if I perturb current state slightly, which direction in state space makes future cost + / -
+            # V_xx: Hessian of cost-to-go
+                # how curved is cost-to-go around this state? is it steep / flat and in which directions
+            V_x, V_xx = terminal_cost(X[-1], self.cost, self.params, target_pos, enemy_pos)[1:]
+
+            k_seq = np.zeros_like(U)         # feedforward control update term
+            K_seq = np.zeros((self.N, 2, 4)) # feedback gains 
             diverged = False
 
+            # for each iteration, compute for all N timestamps
             for k in reversed(range(self.N)):
-                xk = X[k]
-                uk = U[k]
-                l, l_x, l_u, l_xx, l_uu, l_ux = running_cost(
-                    xk, uk, self.cost, self.params, target_pos, enemy_pos
-                )
+                xk = X[k]       # current state x
+                uk = U[k]       # current input u
+
+                # get running cost
+                l, l_x, l_u, l_xx, l_uu, l_ux = running_cost(xk, uk, self.cost, self.params, target_pos, enemy_pos)
+                # get the linearized dynamics
                 f_x, f_u = linearize_dynamics(xk, uk, self.dt, self.params)
 
+                # Q function derivatives
                 Q_x  = l_x  + f_x.T @ V_x
                 Q_u  = l_u  + f_u.T @ V_x
                 Q_xx = l_xx + f_x.T @ V_xx @ f_x
                 Q_ux = l_ux + f_u.T @ V_xx @ f_x
                 Q_uu = l_uu + f_u.T @ V_xx @ f_u + self.reg * np.eye(2)
 
-
-                # regularize and symmetrize Q_uu, V_xx
+                # regularize and symmetrize Q_uu
                 Q_uu = 0.5 * (Q_uu + Q_uu.T) + self.reg * np.eye(2)
 
+                # If Q_uu is fucked / singular, then local opt. is not convext in u
                 try:
                     Q_uu_inv = np.linalg.inv(Q_uu)
                 except np.linalg.LinAlgError:
-                    diverged = True
+                    diverged = True     # we fucked it, it diverged
                     break
-
+                
+                # update feedforward term k, update feedback term K. Store them
                 k_ff = -Q_uu_inv @ Q_u
                 K_fb = -Q_uu_inv @ Q_ux
 
                 k_seq[k] = k_ff
                 K_seq[k] = K_fb
 
+                # Given optimal u*_k, plug back into Q to get new approimate value function
+                # u* = k + K * x
                 V_x  = Q_x + K_fb.T @ Q_uu @ k_ff + K_fb.T @ Q_u + Q_ux.T @ k_ff
                 V_xx = Q_xx + K_fb.T @ Q_uu @ K_fb + K_fb.T @ Q_ux + Q_ux.T @ K_fb
                 
+                # regularize and symmetrize V_xx
                 V_xx = 0.5 * (V_xx + V_xx.T)
 
             if diverged:
                 if self.verbose:
                     print(f"[iLQR] backward diverged at iter {it}")
                 break
+            
+            # After backwards pass, we are left with full set of (k, K). Updates controller
 
-            # --- Forward line search ---
+
+            # Forward rollout: u_new = u + alpha * k + K(x_new - x_nom)
             improved = False
             for alpha in self.alpha_list:
                 U_new = np.zeros_like(U)
@@ -325,21 +348,17 @@ class ILQRController:
                 J_new = 0.0
 
                 for k in range(self.N):
+                    # x_new - x_nominal
                     dx = X_new[k] - X[k]
-                    U_new[k] = self.params.clip_u(
-                        U[k] + alpha * k_seq[k] + K_seq[k] @ dx
-                    )
-                    l, _, _, _, _, _ = running_cost(
-                        X_new[k], U_new[k], self.cost, self.params, target_pos, enemy_pos
-                    )
-                    J_new += l
-                    X_new[k + 1] = discrete_dynamics(
-                        X_new[k], U_new[k], self.dt, self.params
-                    )
+                    # new U
+                    U_new[k] = self.params.clip_u(U[k] + alpha * k_seq[k] + K_seq[k] @ dx)
 
-                lf, _, _ = terminal_cost(
-                    X_new[-1], self.cost, self.params, target_pos, enemy_pos
-                )
+                    # get new running cost
+                    l, _, _, _, _, _ = running_cost(X_new[k], U_new[k], self.cost, self.params, target_pos, enemy_pos)
+                    J_new += l
+                    X_new[k + 1] = discrete_dynamics(X_new[k], U_new[k], self.dt, self.params)
+
+                lf, _, _ = terminal_cost(X_new[-1], self.cost, self.params, target_pos, enemy_pos)
                 J_new += lf
 
                 if J_new < J:

@@ -20,10 +20,19 @@ forward kinematics to glove
     - given state vector x [q1, q2, q1_dot, q2_dot]
     - return glove position wrt world frame [1, 2, 3]
 
+Dynamcis:
+M*q_ddot + C*q_dot + G + damping = u
+
+Jacobian: J = dp(FK position) / dq
+
 target position doesn't change
 
-cost function over a horizon
-J = ...
+Cost Terms:
+running cost:
+0.5 * (x - x_goal).T @ Q @ (x - x_goal) + 0.5 * (u).T @ R @ u
+
+
+
 
 
 

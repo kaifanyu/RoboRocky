@@ -60,7 +60,7 @@ def build_robot_diagram_two(
 
     # Translate and rotate ally and enemy
     X_WA = RigidTransform([0.0, 0.0, 0.0])      # place first at 0 0 0 
-    X_WE = RigidTransform(RotationMatrix.MakeZRotation(np.pi), [1.5, 0.0, 0.0]) # rotate by pi and +2x
+    X_WE = RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0.9, 0.0, 0.0]) # rotate by pi and +2x
 
     plant.WeldFrames(W, A_wall, X_WA)
     plant.WeldFrames(W, E_wall, X_WE)
@@ -77,7 +77,7 @@ def build_robot_diagram_two(
 
 
     # add target frame
-    target_pos_W = np.array([0.8, 0.0, 0.6])  # (x,y,z) in world
+    target_pos_W = np.array([0.8, 0.0, 1.25])  # (x,y,z) in world
     X_WT = RigidTransform(target_pos_W)
 
     # fix it to frame "enemy_target"
