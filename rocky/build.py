@@ -61,7 +61,7 @@ def build_robot_diagram_two(
 
     # Translate and rotate ally and enemy
     X_WA = RigidTransform([0.0, 0.0, 0.0])      # place first at 0 0 0 
-    X_WE = RigidTransform(RotationMatrix.MakeZRotation(np.pi), [0.9, 0.0, 0.0]) # rotate by pi and +2x
+    X_WE = RigidTransform(RotationMatrix.MakeZRotation(np.pi), [1.1, 0.0, 0.0]) # rotate by pi and +2x
 
     plant.WeldFrames(W, A_wall, X_WA)
     plant.WeldFrames(W, E_wall, X_WE)
@@ -77,8 +77,8 @@ def build_robot_diagram_two(
 
 
 
-    # add target frame
-    target_pos_W = np.array([0.8, 0.0, 1.25])  # (x,y,z) in world
+    # add ally (player) target frame on enemy side
+    target_pos_W = np.array([1.0, 0.0, 1.25])  # (x,y,z) in world
     X_WT = RigidTransform(target_pos_W)
 
     # fix it to frame "enemy_target"
@@ -109,6 +109,30 @@ def build_robot_diagram_two(
         Sphere(radius),
         "enemy_target_collision",
         props,
+    )
+
+    # add enemy target frame on ally side so enemy can strike back
+    enemy_target_pos_W = np.array([0.15, 0.0, 1.25])
+    X_WT_enemy = RigidTransform(enemy_target_pos_W)
+    plant.AddFrame(FixedOffsetFrame("ally_target", W, X_WT_enemy))
+
+    enemy_diffuse = np.array([0.0, 0.4, 1.0, 1.0])
+    props_enemy = ProximityProperties()
+    AddContactMaterial(dissipation, elastic_modulus, friction, props_enemy)
+    plant.RegisterVisualGeometry(
+        plant.world_body(),
+        X_WT_enemy,
+        Sphere(radius),
+        "ally_target_visual",
+        enemy_diffuse,
+    )
+
+    plant.RegisterCollisionGeometry(
+        plant.world_body(),
+        X_WT_enemy,
+        Sphere(radius),
+        "ally_target_collision",
+        props_enemy,
     )
     
     diagram, context, plant_context, sim = _finalize(builder, plant, gravity_vec, meshcat)
