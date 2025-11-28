@@ -97,7 +97,7 @@
     <dynamics damping="0.1"/>
   </joint>
 
-  <!-- Elbow Visual Marker -->
+  <!-- Elbow Visual Ma'hi',rker -->
   <link name="elbow_marker">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>

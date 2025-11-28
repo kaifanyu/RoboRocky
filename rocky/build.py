@@ -7,7 +7,12 @@ from pydrake.all import (
     Rgba, Sphere, CoulombFriction
 )
 from pydrake.multibody.tree import FixedOffsetFrame, RevoluteJoint
-from pydrake.geometry import ProximityProperties, AddContactMaterial
+from pydrake.geometry import (
+    ProximityProperties,
+    AddContactMaterial,
+    GeometrySet,
+    CollisionFilterDeclaration,
+)
 
 @dataclass
 class SimBundle:
@@ -41,6 +46,7 @@ def build_robot_diagram_two(
     time_step: float = 1e-3,
     gravity_vec=(0., 0., 0.),
     meshcat=None,
+    disable_link_collisions: bool = False,
 ):
     builder = DiagramBuilder()      # create a builder, holds plant and scene
 
@@ -134,6 +140,28 @@ def build_robot_diagram_two(
         "ally_target_collision",
         props_enemy,
     )
+
+    # Optionally disable collisions for the arm links so only EEs/walls interact
+    if disable_link_collisions:
+        manager = scene_graph.collision_filter_manager()
+        inspector = scene_graph.model_inspector()
+        all_ids = set(inspector.GetAllGeometryIds())
+
+        def _link_collision_ids(model_instance):
+            ids = []
+            for link_name in ("link1", "link2"):
+                if plant.HasBodyNamed(link_name, model_instance):
+                    body = plant.GetBodyByName(link_name, model_instance)
+                    ids.extend(plant.GetCollisionGeometriesForBody(body))
+            return ids
+
+        link_ids = _link_collision_ids(ally) + _link_collision_ids(enemy)
+        if link_ids:
+            manager.Apply(
+                CollisionFilterDeclaration().ExcludeBetween(
+                    GeometrySet(list(link_ids)), GeometrySet(list(all_ids))
+                )
+            )
     
     diagram, context, plant_context, sim = _finalize(builder, plant, gravity_vec, meshcat)
     
