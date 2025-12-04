@@ -105,8 +105,8 @@ def build_robot_diagram_two(
     friction = CoulombFriction(static_friction=0.8, dynamic_friction=0.5)
     props = ProximityProperties()
     # Example numbers; tune these:
-    elastic_modulus = 5e7      # larger -> stiffer, more bounce
-    dissipation = 0.1          # smaller -> less energy loss, more bounce
+    elastic_modulus = 6e8      # larger -> stiffer, more bounce
+    dissipation = 0.05          # smaller -> less energy loss, more bounce
     AddContactMaterial(dissipation, elastic_modulus, friction, props)
 
     plant.RegisterCollisionGeometry(
