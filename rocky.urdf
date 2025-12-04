@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
-<robot name="rocky" xmlns:drake="http://drake.mit.edu">
+<robot name="rocky">
 
-  <!-- ===== Wall (base) ===== -->
   <link name="wall">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
+      <!-- Big mass so it's clearly "fixed-ish"; exact numbers don't matter if welded -->
       <mass value="100.0"/>
       <inertia ixx="1" iyy="1" izz="1" ixy="0" ixz="0" iyz="0"/>
     </inertial>
@@ -19,41 +19,39 @@
     </collision>
   </link>
 
-  <!-- ===== Link 1: 1.0 m cylinder along +x (rotate cylinder z->x by Ry(pi/2)) ===== -->
-  <!-- L=1.0, r=0.02, m=0.6 -->
-  <!-- Inertia at COM, axis along x:
-       Ixx = (1/2) m r^2 = 0.00012
-       Iyy = Izz = (1/12) m (L^2 + 3 r^2) ≈ 0.05006 -->
+  <!-- Upper Arm 
+  Length: 0.5m along +x -->
   <link name="link1">
-    <inertial>
-      <origin xyz="0.50 0 0" rpy="0 0 0"/>
+    <inertial>  
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <mass value="0.6"/>
-      <inertia ixx="0.00012" iyy="0.05006" izz="0.05006" ixy="0" ixz="0" iyz="0"/>
+      <inertia ixx="0.0020" iyy="0.0060" izz="0.0060" ixy="0" ixz="0" iyz="0"/>
     </inertial>
 
     <visual>
-      <origin xyz="0.50 0 0" rpy="0 1.57079632679 0"/>
-      <geometry><cylinder length="1.0" radius="0.02"/></geometry>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.50 0.04 0.04"/></geometry>
       <material name="orange"><color rgba="0.9 0.4 0.2 1"/></material>
     </visual>
 
     <collision>
-      <origin xyz="0.50 0 0" rpy="0 1.57079632679 0"/>
-      <geometry><cylinder length="1.0" radius="0.02"/></geometry>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.50 0.04 0.04"/></geometry>
     </collision>
   </link>
 
-  <!-- Shoulder joint: wall -> link1 at height z=1 -->
+  <!-- SHOULDER joint: wall -> link1, mounted at height Z0 -->
   <joint name="shoulder" type="revolute">
     <parent link="wall"/>
     <child  link="link1"/>
+    <!-- ***** Set your mounting height here ***** -->
     <origin xyz="0 0 1" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-3.14" upper="3.14" effort="40" velocity="8.0"/>
     <dynamics damping="0.1"/>
   </joint>
 
-  <!-- Shoulder visual marker -->
+  <!-- Shoulder visual marker (at the shoulder joint pose on the wall) -->
   <link name="shoulder_marker">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -67,35 +65,31 @@
     <origin xyz="0 0 1" rpy="0 0 0"/>
   </joint>
 
-  <!-- ===== Link 2: 1.0 m cylinder along +x (same rotation) ===== -->
-  <!-- L=1.0, r=0.02, m=0.5 -->
-  <!-- Inertia at COM:
-       Ixx = (1/2) m r^2 = 0.00010
-       Iyy = Izz = (1/12) m (L^2 + 3 r^2) ≈ 0.04172 -->
+  <!-- Forearm -->
   <link name="link2">
     <inertial>
-      <origin xyz="0.50 0 0" rpy="0 0 0"/>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
       <mass value="0.5"/>
-      <inertia ixx="0.00010" iyy="0.04172" izz="0.04172" ixy="0" ixz="0" iyz="0"/>
+      <inertia ixx="0.0020" iyy="0.0060" izz="0.0060" ixy="0" ixz="0" iyz="0"/>
     </inertial>
-
     <visual>
-      <origin xyz="0.50 0 0" rpy="0 1.57079632679 0"/>
-      <geometry><cylinder length="1.0" radius="0.02"/></geometry>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.50 0.04 0.04"/></geometry>
       <material name="blue"><color rgba="0.2 0.6 0.9 1"/></material>
     </visual>
-
     <collision>
-      <origin xyz="0.50 0 0" rpy="0 1.57079632679 0"/>
-      <geometry><cylinder length="1.0" radius="0.02"/></geometry>
+      <origin xyz="0.25 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.50 0.04 0.04"/></geometry>
     </collision>
   </link>
+  
 
-  <!-- Elbow joint at link1 tip x=1.0 -->
+  <!-- Elbow Joint-->
   <joint name="elbow" type="revolute">
     <parent link="link1"/>
     <child  link="link2"/>
-    <origin xyz="1.00 0 0" rpy="0 0 0"/>
+
+    <origin xyz="0.50 0 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
 
     <!-- <limit lower="-1.57" upper="1.57" effort="30" velocity="8.0"/> -->
@@ -103,7 +97,7 @@
     <dynamics damping="0.1"/>
   </joint>
 
-  <!-- Elbow Visual Ma'hi',rker -->
+  <!-- Elbow Visual Marker -->
   <link name="elbow_marker">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -114,31 +108,37 @@
   <joint name="elbow_marker_weld" type="fixed">
     <parent link="link1"/>
     <child  link="elbow_marker"/>
-    <origin xyz="1.00 0 0" rpy="0 0 0"/>
+    <!-- Same pose as the elbow joint -->
+    <origin xyz="0.50 0 0" rpy="0 0 0"/>
   </joint>
 
-  <!-- End effector "glove" at link2 tip x=1.0 -->
+
+
+  <!-- End Effector Glove Joint -->
   <joint name="glove_fixed" type="fixed">
     <parent link="link2"/>
     <child  link="glove"/>
-    <origin xyz="1.00 0 0" rpy="0 0 0"/>
+    <origin xyz="0.5 0 0" rpy="0 0 0"/>
   </joint>
 
+  <!-- End Effector Glove visualize-->
   <link name="glove">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry><sphere radius="0.05"/></geometry>
       <material name="red"><color rgba="1 0 0 1"/></material>
     </visual>
-    <collision>
+      <collision>
       <drake:proximity_properties>
-        <drake:hunt_crossley_dissipation value="0.5"/>
-        <drake:mu_static  value="0.7"/>
-        <drake:mu_dynamic value="0.5"/>
-      </drake:proximity_properties>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry><sphere radius="0.05"/></geometry>
-    </collision>
+      <drake:hunt_crossley_dissipation value="0.5"/>   <!-- lower = bouncier -->
+      <drake:mu_static  value="0.7"/>
+      <drake:mu_dynamic value="0.5"/>
+    </drake:proximity_properties>
+
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><sphere radius="0.05"/></geometry>
+      </collision>
+
   </link>
 
 </robot>
