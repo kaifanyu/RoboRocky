@@ -97,13 +97,11 @@
     <child  link="link2"/>
     <origin xyz="1.00 0 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-
-    <!-- <limit lower="-1.57" upper="1.57" effort="30" velocity="8.0"/> -->
     <limit lower="-3.14" upper="3.14" effort="30" velocity="8.0"/>
     <dynamics damping="0.1"/>
   </joint>
 
-  <!-- Elbow Visual Ma'hi',rker -->
+  <!-- Elbow visual marker -->
   <link name="elbow_marker">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
