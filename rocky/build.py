@@ -41,7 +41,7 @@ def _finalize(builder, plant, gravity_vec, meshcat):
     return diagram, context, plant_context, sim
 
 
-def build_robot_diagram_two(
+def build_robot_diagram(
     urdf_path: str,
     time_step: float = 1e-3,
     gravity_vec=(0., 0., 0.),
