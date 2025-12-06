@@ -7,18 +7,20 @@ from pydrake.all import (
     Rgba, Sphere, CoulombFriction
 )
 from pydrake.multibody.tree import FixedOffsetFrame, RevoluteJoint
+from pydrake.multibody.plant import MultibodyPlant
 from pydrake.geometry import (
     ProximityProperties,
     AddContactMaterial,
     GeometrySet,
     CollisionFilterDeclaration,
+    SceneGraph,
 )
 
 @dataclass
 class SimBundle:
     builder: DiagramBuilder
-    plant: any
-    scene_graph: any
+    plant: MultibodyPlant
+    scene_graph: SceneGraph
     diagram: any
     context: any
     plant_context: any
@@ -167,3 +169,26 @@ def build_robot_diagram(
     
     return SimBundle(builder, plant, scene_graph, diagram, context, plant_context, sim,
                      ally=ally, enemy=enemy)
+
+def build_collocation_plant(urdf):
+    plant = MultibodyPlant(time_step=0.0)
+    parser = Parser(plant)
+    model = parser.AddModels(urdf)[0]
+
+    # weld base same as simulation
+    plant.WeldFrames(
+        plant.world_frame(),
+        plant.GetFrameByName("wall", model),
+        RigidTransform([0., 0., 0.])
+    )
+
+    # add actuators
+    for j in plant.GetJointIndices(model):
+        joint = plant.get_joint(j)
+        if isinstance(joint, RevoluteJoint):
+            plant.AddJointActuator(f"{joint.name()}_act", joint)
+
+    plant.Finalize()
+
+    context = plant.CreateDefaultContext()
+    return plant, context, model
